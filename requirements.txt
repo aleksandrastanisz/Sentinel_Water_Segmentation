@@ -1,0 +1,9 @@
+torch
+torchvision
+segmentation-models-pytorch
+rasterio
+numpy
+scipy
+scikit-learn
+matplotlib
+albumentations

@@ -26,3 +26,22 @@ def evaluate_baseline(pred_mask: np.ndarray, target_mask: np.ndarray) -> dict:
 
 if __name__ == "__main__":
     from indices import calculate_ndwi
+
+    # test
+    h, w = 128, 128
+    dummy_green = np.random.uniform(0.1, 0.4, (h, w)).astype(np.float32)
+    dummy_nir = np.random.uniform(0.1, 0.4, (h, w)).astype(np.float32)
+
+    # symulacja rzeki lub jeziora
+    dummy_nir[40:70, :] = 0.02
+    dummy_green[40:70, :] = 0.25
+
+    dummy_target = np.zeros((h, w), dtype=np.uint8)
+    dummy_target[40:70, :] = 1
+
+    ndwi = calculate_ndwi(dummy_green, dummy_nir)
+    pred, thresh = segment_otsu(ndwi)
+    metrics = evaluate_baseline(pred, dummy_target)
+
+    print(f"Wyliczony prog Otsu: {thresh:.4f}")
+    print(f"Wyniki: IoU = {metrics['IoU']:.4f}, Dice = {metrics['Dice']:.4f}")

@@ -1,3 +1,4 @@
+scikit-image
 torch
 torchvision
 segmentation-models-pytorch

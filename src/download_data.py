@@ -1,8 +1,10 @@
+import shutil
 from pathlib import Path
 import numpy as np
 import rasterio
+from rasterio.enums import Resampling
 from rasterio.warp import transform_bounds
-from rasterio.windows import Window, from_bounds
+from rasterio.windows import from_bounds
 from pystac_client import Client
 import planetary_computer as pc
 
@@ -10,23 +12,23 @@ import planetary_computer as pc
 def fetch_and_tile_sentinel():
     project_root = Path(__file__).resolve().parent.parent
     processed_dir = project_root / "data" / "processed"
-    images_dir = processed_dir / "images"
-    masks_dir = processed_dir / "masks"
 
-    images_dir.mkdir(parents=True, exist_ok=True)
-    masks_dir.mkdir(parents=True, exist_ok=True)
+    # Czyszczenie starych danych i tworzenie struktury train/val
+    if processed_dir.exists():
+        shutil.rmtree(processed_dir)
 
-    for f in images_dir.glob("*.npy"):
-        f.unlink()
-    for f in masks_dir.glob("*.npy"):
-        f.unlink()
+    for split in ["train", "val"]:
+        (processed_dir / split / "images").mkdir(parents=True, exist_ok=True)
+        (processed_dir / split / "masks").mkdir(parents=True, exist_ok=True)
 
     catalog = Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
         modifier=pc.sign_inplace
     )
 
-    bbox = [14.47, 53.73, 14.53, 53.77]
+    # Powiększony bbox (okolice Zalewu Szczecińskiego / jeziora Dąbie),
+    # żeby uzyskać więcej kafelków w natywnej rozdzielczości 10m
+    bbox = [14.45, 53.40, 14.75, 53.65]
 
     search = catalog.search(
         collections=["sentinel-2-l2a"],
@@ -38,57 +40,111 @@ def fetch_and_tile_sentinel():
 
     items = list(search.items())
     if not items:
-        print("brak")
+        print("Brak scen spełniających kryteria.")
         return
 
     item = items[0]
-    print(f"pobieranie dla: {item.id}")
+    print(f"Pobieranie dla sceny: {item.id}")
+
+    # 1. Wyznaczenie natywnej siatki 10m na podstawie kanału B02
+    ref_href = item.assets["B02"].href
+    with rasterio.open(ref_href) as ref_src:
+        proj_bounds = transform_bounds("EPSG:4326", ref_src.crs, *bbox)
+        ref_win = from_bounds(*proj_bounds, transform=ref_src.transform)
+        ref_win = ref_win.round_lengths().round_offsets()
+        target_h = int(ref_win.height)
+        target_w = int(ref_win.width)
+
+    print(f"Rozmiar wycinka w rozdzielczości 10m: {target_h}x{target_w} px")
 
     band_keys = ["B02", "B03", "B04", "B08", "B11"]
     bands_data = []
 
-    ref_href = item.assets["B02"].href
-    with rasterio.open(ref_href) as ref_src:
-        proj_bounds = transform_bounds("EPSG:4326", ref_src.crs, *bbox)
-
-    target_shape = (512, 512)
-
+    # 2. Pobieranie kanałów spektralnych z odpowiednim resamplingiem
     for key in band_keys:
         href = item.assets[key].href
         with rasterio.open(href) as src:
             band_win = from_bounds(*proj_bounds, transform=src.transform)
             band_win = band_win.round_lengths().round_offsets()
 
-            data = src.read(1, window=band_win, out_shape=target_shape).astype(np.float32)
-            data = np.clip(data / 10000.0, 0.0, 1.0)
+            # Dla B11 (20m) używamy interpolacji dwuliniowej do siatki 10m
+            resamp = Resampling.bilinear if key == "B11" else Resampling.nearest
+
+            raw = src.read(
+                1,
+                window=band_win,
+                out_shape=(target_h, target_w),
+                resampling=resamp
+            ).astype(np.float32)
+
+            # Sprawdzenie czy dane mają niewyzerowany offset radiometryczny (+1000 w Baseline 04.00)
+            # W Planetary Computer starsze kolekcje miały offset, zharmonizowane już nie.
+            if np.percentile(raw[raw > 0], 1) > 800:
+                raw = raw - 1000.0
+
+            data = np.clip(raw / 10000.0, 0.0, 1.0)
             bands_data.append(data)
 
     stacked_bands = np.stack(bands_data, axis=-1)
 
-    green = stacked_bands[:, :, 1]
-    swir = stacked_bands[:, :, 4]
-    mndwi = (green - swir) / (green + swir + 1e-7)
-    water_mask = (mndwi > 0.0).astype(np.uint8)
+    # 3. Pobranie niezależnej maski referencyjnej z warstwy SCL (Scene Classification Layer)
+    scl_href = item.assets["SCL"].href
+    with rasterio.open(scl_href) as scl_src:
+        scl_win = from_bounds(*proj_bounds, transform=scl_src.transform)
+        scl_win = scl_win.round_lengths().round_offsets()
 
+        scl_data = scl_src.read(
+            1,
+            window=scl_win,
+            out_shape=(target_h, target_w),
+            resampling=Resampling.nearest  # Nearest, bo SCL to klasy dyskretne!
+        )
+
+    # W warstwie SCL wartość 6 oznacza wodę (Water)
+    # Dodatkowo wykluczamy chmury i cienie (klasy 3, 8, 9, 10) oraz brak danych (0)
+    water_mask = (scl_data == 6).astype(np.uint8)
+    invalid_mask = np.isin(scl_data, [0, 3, 8, 9, 10])
+
+    # 4. Cięcie na kafelki 256x256 i podział na train / val
     tile_size = 256
-    saved_count = 0
+    valid_tiles = []
 
-    for r in range(0, target_shape[0], tile_size):
-        for c in range(0, target_shape[1], tile_size):
+    for r in range(0, target_h - tile_size + 1, tile_size):
+        for c in range(0, target_w - tile_size + 1, tile_size):
             img_tile = stacked_bands[r:r + tile_size, c:c + tile_size, :]
             mask_tile = water_mask[r:r + tile_size, c:c + tile_size]
+            inv_tile = invalid_mask[r:r + tile_size, c:c + tile_size]
+
+            # Odrzucamy kafelki, gdzie ponad 5% pikseli to chmury/cienie/brak danych
+            if inv_tile.mean() > 0.05:
+                continue
 
             water_ratio = float(mask_tile.mean())
+            if 0.02 <= water_ratio <= 0.98:
+                valid_tiles.append((img_tile, mask_tile))
 
-            if 0.01 <= water_ratio <= 0.99:
-                out_img = images_dir / f"water_tile_{saved_count}.npy"
-                out_mask = masks_dir / f"water_tile_{saved_count}.npy"
+    # Przemieszanie z ustalonym ziarnem i podział 80% train / 20% val
+    rng = np.random.default_rng(seed=42)
+    indices = rng.permutation(len(valid_tiles))
+    split_idx = int(0.8 * len(valid_tiles))
 
-                np.save(out_img, img_tile)
-                np.save(out_mask, mask_tile)
-                saved_count += 1
+    train_count, val_count = 0, 0
+    for idx_pos, tile_idx in enumerate(indices):
+        img_tile, mask_tile = valid_tiles[tile_idx]
+        split = "train" if idx_pos < split_idx else "val"
 
-    print(f"wygenerowano {saved_count} zdjec w {processed_dir}")
+        out_img = processed_dir / split / "images" / f"water_tile_{tile_idx:04d}.npy"
+        out_mask = processed_dir / split / "masks" / f"water_tile_{tile_idx:04d}.npy"
+
+        np.save(out_img, img_tile)
+        np.save(out_mask, mask_tile)
+
+        if split == "train":
+            train_count += 1
+        else:
+            val_count += 1
+
+    print(f"Zapisano {train_count} kafelków w 'train' oraz {val_count} w 'val' (katalog: {processed_dir})")
 
 
 if __name__ == "__main__":

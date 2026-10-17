@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
 
+import os
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 def get_unet_model(
     in_channels: int = 7,

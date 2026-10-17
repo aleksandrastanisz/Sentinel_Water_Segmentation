@@ -1,5 +1,6 @@
 import glob
 import os
+from pathlib import Path
 from typing import Optional, Callable, Tuple
 
 import numpy as np
@@ -61,5 +62,32 @@ class SentinelWaterDataset(Dataset):
 
 
 if __name__ == "__main__":
-    dataset = SentinelWaterDataset(root_dir="data/processed")
-    print(f"dziala")
+
+    project_root = Path(__file__).resolve().parent.parent
+    processed_dir = project_root / "data" / "processed"
+
+    images_dir = processed_dir / "images"
+    masks_dir = processed_dir / "masks"
+
+    images_dir.mkdir(parents=True, exist_ok=True)
+    masks_dir.mkdir(parents=True, exist_ok=True)
+
+    h, w = 256, 256
+    for i in range(2):
+
+        dummy_bands = np.random.uniform(0.1, 0.4, (h, w, 5)).astype(np.float32)
+        dummy_mask = np.zeros((h, w), dtype=np.uint8)
+
+        dummy_bands[50:120, :, 3] = 0.02
+        dummy_bands[50:120, :, 1] = 0.25  # Green
+        dummy_mask[50:120, :] = 1
+
+        np.save(images_dir / f"sample_{i}.npy", dummy_bands)
+        np.save(masks_dir / f"sample_{i}.npy", dummy_mask)
+
+    dataset = SentinelWaterDataset(root_dir=str(processed_dir))
+    print(f"Liczba probek w processed: {len(dataset)}")
+
+    features, mask = dataset[0]
+    print(f"Tensor wejściowy: {features.shape}")
+    print(f"Maska: {mask.shape}")

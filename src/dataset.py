@@ -49,6 +49,11 @@ class SentinelWaterDataset(Dataset):
 
         features = stack_multispectral_tensor(b02, b03, b04, b08, b11)
 
+        if self.transform is not None:
+            augmented = self.transform(image=features, mask=mask)
+            features = augmented["image"]
+            mask = augmented["mask"]
+
         return
 
 

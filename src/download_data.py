@@ -25,7 +25,7 @@ def fetch_and_tile_sentinel():
         modifier=pc.sign_inplace
     )
 
-    bbox = [14.45, 53.40, 14.75, 53.65]
+    bbox = [14.35, 53.65, 14.65, 53.85]
 
     search = catalog.search(
         collections=["sentinel-2-l2a"],

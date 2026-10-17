@@ -1,7 +1,8 @@
 import glob
 import os
-from typing import Optional, Callable
+from typing import Optional, Callable, Tuple
 
+import torch
 from torch.utils.data import Dataset
 
 
@@ -20,6 +21,17 @@ class SentinelWaterDataset(Dataset):
 
         if len(self.image_paths) == 0:
             self.image_paths = sorted(glob.glob(os.path.join(self.images_dir, "*.npy")))
+
+    def __len__(self) -> int:
+        return len(self.image_paths)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        img_path = self.image_paths[idx]
+        filename = os.path.basename(img_path)
+        mask_path = os.path.join(self.masks_dir, filename)
+
+        return
+
 
 if __name__ == "__main__":
     dataset = SentinelWaterDataset(root_dir="data/processed")

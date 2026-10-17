@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import segmentation_models_pytorch as smp
 
@@ -16,3 +17,14 @@ def get_unet_model(
         activation=None
     )
     return model
+
+if __name__ == "__main__":
+    # test
+    model = get_unet_model(in_channels=7, num_classes=1)
+
+    dummy_input = torch.randn(2, 7, 256, 256)
+    with torch.no_grad():
+        output = model(dummy_input)
+
+    print(f"in: {dummy_input.shape}")
+    print(f"out: {output.shape}")

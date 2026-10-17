@@ -54,7 +54,10 @@ class SentinelWaterDataset(Dataset):
             features = augmented["image"]
             mask = augmented["mask"]
 
-        return
+        features_tensor = torch.from_numpy(features).permute(2, 0, 1).float()
+        mask_tensor = torch.from_numpy(mask).long().unsqueeze(0)
+
+        return features_tensor, mask_tensor
 
 
 if __name__ == "__main__":

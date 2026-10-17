@@ -1,7 +1,8 @@
 from pathlib import Path
 import numpy as np
 import rasterio
-from rasterio.windows import Window
+from rasterio.warp import transform_bounds
+from rasterio.windows import Window, from_bounds
 from pystac_client import Client
 import planetary_computer as pc
 
@@ -15,12 +16,17 @@ def fetch_and_tile_sentinel():
     images_dir.mkdir(parents=True, exist_ok=True)
     masks_dir.mkdir(parents=True, exist_ok=True)
 
+    for f in images_dir.glob("*.npy"):
+        f.unlink()
+    for f in masks_dir.glob("*.npy"):
+        f.unlink()
+
     catalog = Client.open(
         "https://planetarycomputer.microsoft.com/api/stac/v1",
         modifier=pc.sign_inplace
     )
 
-    bbox = [14.30, 53.60, 14.70, 53.90]
+    bbox = [14.47, 53.73, 14.53, 53.77]
 
     search = catalog.search(
         collections=["sentinel-2-l2a"],
@@ -41,12 +47,19 @@ def fetch_and_tile_sentinel():
     band_keys = ["B02", "B03", "B04", "B08", "B11"]
     bands_data = []
 
-    win = Window(col_off=4000, row_off=4000, width=1024, height=1024)
+    ref_href = item.assets["B02"].href
+    with rasterio.open(ref_href) as ref_src:
+        proj_bounds = transform_bounds("EPSG:4326", ref_src.crs, *bbox)
+
+    target_shape = (512, 512)
 
     for key in band_keys:
         href = item.assets[key].href
         with rasterio.open(href) as src:
-            data = src.read(1, window=win, out_shape=(1024, 1024)).astype(np.float32)
+            band_win = from_bounds(*proj_bounds, transform=src.transform)
+            band_win = band_win.round_lengths().round_offsets()
+
+            data = src.read(1, window=band_win, out_shape=target_shape).astype(np.float32)
             data = np.clip(data / 10000.0, 0.0, 1.0)
             bands_data.append(data)
 
@@ -60,14 +73,14 @@ def fetch_and_tile_sentinel():
     tile_size = 256
     saved_count = 0
 
-    for r in range(0, 1024, tile_size):
-        for c in range(0, 1024, tile_size):
-            img_tile = stacked_bands[r:r+tile_size, c:c+tile_size, :]
-            mask_tile = water_mask[r:r+tile_size, c:c+tile_size]
+    for r in range(0, target_shape[0], tile_size):
+        for c in range(0, target_shape[1], tile_size):
+            img_tile = stacked_bands[r:r + tile_size, c:c + tile_size, :]
+            mask_tile = water_mask[r:r + tile_size, c:c + tile_size]
 
-            water_ratio = mask_tile.mean()
+            water_ratio = float(mask_tile.mean())
 
-            if 0.10 <= water_ratio <= 0.90:
+            if 0.01 <= water_ratio <= 0.99:
                 out_img = images_dir / f"water_tile_{saved_count}.npy"
                 out_mask = masks_dir / f"water_tile_{saved_count}.npy"
 

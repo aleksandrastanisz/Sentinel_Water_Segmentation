@@ -2,6 +2,8 @@ import glob
 import os
 from typing import Optional, Callable, Tuple
 
+import numpy as np
+import rasterio
 import torch
 from torch.utils.data import Dataset
 
@@ -29,6 +31,19 @@ class SentinelWaterDataset(Dataset):
         img_path = self.image_paths[idx]
         filename = os.path.basename(img_path)
         mask_path = os.path.join(self.masks_dir, filename)
+
+        if img_path.endswith(".npy"): # tensor num
+            raw_bands = np.load(img_path).astype(np.float32)
+            mask = np.load(mask_path).astype(np.uint8)
+            b02, b03, b04, b08, b11 = [raw_bands[..., i] for i in range(5)]
+        else: # geo tiff
+            with rasterio.open(img_path) as src:
+                bands = src.read().astype(np.float32) / self.scale_factor
+                b02, b03, b04, b08, b11 = bands[0], bands[1], bands[2], bands[3], bands[4]
+
+            with rasterio.open(mask_path) as src:
+                mask = src.read(1)
+                mask = (mask > 0).astype(np.uint8)
 
         return
 

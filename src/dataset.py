@@ -7,6 +7,8 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
+from src.indices import stack_multispectral_tensor
+
 
 class SentinelWaterDataset(Dataset):
     def __init__(
@@ -44,6 +46,8 @@ class SentinelWaterDataset(Dataset):
             with rasterio.open(mask_path) as src:
                 mask = src.read(1)
                 mask = (mask > 0).astype(np.uint8)
+
+        features = stack_multispectral_tensor(b02, b03, b04, b08, b11)
 
         return
 

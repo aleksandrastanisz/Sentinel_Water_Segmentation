@@ -100,7 +100,7 @@ def main():
             best_val_iou = val_iou
             torch.save(model.state_dict(), weights_path)
 
-    print(f"Zakończono. Najlepsze Val IoU: {best_val_iou:.4f} (zapisano w: {weights_path})")
+    print(f"Najlepsze Val IoU: {best_val_iou:.4f} (zapisano w: {weights_path})")
 
 
 if __name__ == "__main__":

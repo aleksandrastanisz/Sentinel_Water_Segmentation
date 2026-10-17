@@ -13,7 +13,6 @@ def fetch_and_tile_sentinel():
     project_root = Path(__file__).resolve().parent.parent
     processed_dir = project_root / "data" / "processed"
 
-    # Czyszczenie starych danych i tworzenie struktury train/val
     if processed_dir.exists():
         shutil.rmtree(processed_dir)
 
@@ -26,8 +25,6 @@ def fetch_and_tile_sentinel():
         modifier=pc.sign_inplace
     )
 
-    # Powiększony bbox (okolice Zalewu Szczecińskiego / jeziora Dąbie),
-    # żeby uzyskać więcej kafelków w natywnej rozdzielczości 10m
     bbox = [14.45, 53.40, 14.75, 53.65]
 
     search = catalog.search(
@@ -46,7 +43,6 @@ def fetch_and_tile_sentinel():
     item = items[0]
     print(f"Pobieranie dla sceny: {item.id}")
 
-    # 1. Wyznaczenie natywnej siatki 10m na podstawie kanału B02
     ref_href = item.assets["B02"].href
     with rasterio.open(ref_href) as ref_src:
         proj_bounds = transform_bounds("EPSG:4326", ref_src.crs, *bbox)
@@ -60,14 +56,12 @@ def fetch_and_tile_sentinel():
     band_keys = ["B02", "B03", "B04", "B08", "B11"]
     bands_data = []
 
-    # 2. Pobieranie kanałów spektralnych z odpowiednim resamplingiem
     for key in band_keys:
         href = item.assets[key].href
         with rasterio.open(href) as src:
             band_win = from_bounds(*proj_bounds, transform=src.transform)
             band_win = band_win.round_lengths().round_offsets()
 
-            # Dla B11 (20m) używamy interpolacji dwuliniowej do siatki 10m
             resamp = Resampling.bilinear if key == "B11" else Resampling.nearest
 
             raw = src.read(
@@ -77,8 +71,6 @@ def fetch_and_tile_sentinel():
                 resampling=resamp
             ).astype(np.float32)
 
-            # Sprawdzenie czy dane mają niewyzerowany offset radiometryczny (+1000 w Baseline 04.00)
-            # W Planetary Computer starsze kolekcje miały offset, zharmonizowane już nie.
             if np.percentile(raw[raw > 0], 1) > 800:
                 raw = raw - 1000.0
 
@@ -87,7 +79,6 @@ def fetch_and_tile_sentinel():
 
     stacked_bands = np.stack(bands_data, axis=-1)
 
-    # 3. Pobranie niezależnej maski referencyjnej z warstwy SCL (Scene Classification Layer)
     scl_href = item.assets["SCL"].href
     with rasterio.open(scl_href) as scl_src:
         scl_win = from_bounds(*proj_bounds, transform=scl_src.transform)
@@ -97,15 +88,12 @@ def fetch_and_tile_sentinel():
             1,
             window=scl_win,
             out_shape=(target_h, target_w),
-            resampling=Resampling.nearest  # Nearest, bo SCL to klasy dyskretne!
+            resampling=Resampling.nearest
         )
 
-    # W warstwie SCL wartość 6 oznacza wodę (Water)
-    # Dodatkowo wykluczamy chmury i cienie (klasy 3, 8, 9, 10) oraz brak danych (0)
     water_mask = (scl_data == 6).astype(np.uint8)
     invalid_mask = np.isin(scl_data, [0, 3, 8, 9, 10])
 
-    # 4. Cięcie na kafelki 256x256 i podział na train / val
     tile_size = 256
     valid_tiles = []
 
@@ -115,7 +103,6 @@ def fetch_and_tile_sentinel():
             mask_tile = water_mask[r:r + tile_size, c:c + tile_size]
             inv_tile = invalid_mask[r:r + tile_size, c:c + tile_size]
 
-            # Odrzucamy kafelki, gdzie ponad 5% pikseli to chmury/cienie/brak danych
             if inv_tile.mean() > 0.05:
                 continue
 
@@ -123,7 +110,6 @@ def fetch_and_tile_sentinel():
             if 0.02 <= water_ratio <= 0.98:
                 valid_tiles.append((img_tile, mask_tile))
 
-    # Przemieszanie z ustalonym ziarnem i podział 80% train / 20% val
     rng = np.random.default_rng(seed=42)
     indices = rng.permutation(len(valid_tiles))
     split_idx = int(0.8 * len(valid_tiles))

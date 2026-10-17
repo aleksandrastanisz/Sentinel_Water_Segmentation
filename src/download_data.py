@@ -20,7 +20,7 @@ def fetch_and_tile_sentinel():
         modifier=pc.sign_inplace
     )
 
-    bbox = [20.65, 49.68, 20.75, 49.78]
+    bbox = [14.30, 53.60, 14.70, 53.90]
 
     search = catalog.search(
         collections=["sentinel-2-l2a"],
@@ -41,12 +41,12 @@ def fetch_and_tile_sentinel():
     band_keys = ["B02", "B03", "B04", "B08", "B11"]
     bands_data = []
 
-    win = Window(col_off=2000, row_off=2000, width=512, height=512)
+    win = Window(col_off=4000, row_off=4000, width=1024, height=1024)
 
     for key in band_keys:
         href = item.assets[key].href
         with rasterio.open(href) as src:
-            data = src.read(1, window=win, out_shape=(512, 512)).astype(np.float32)
+            data = src.read(1, window=win, out_shape=(1024, 1024)).astype(np.float32)
             data = np.clip(data / 10000.0, 0.0, 1.0)
             bands_data.append(data)
 
@@ -58,17 +58,24 @@ def fetch_and_tile_sentinel():
     water_mask = (mndwi > 0.0).astype(np.uint8)
 
     tile_size = 256
-    tile_idx = 0
-    for r in range(0, 512, tile_size):
-        for c in range(0, 512, tile_size):
+    saved_count = 0
+
+    for r in range(0, 1024, tile_size):
+        for c in range(0, 1024, tile_size):
             img_tile = stacked_bands[r:r+tile_size, c:c+tile_size, :]
             mask_tile = water_mask[r:r+tile_size, c:c+tile_size]
 
-            np.save(images_dir / f"real_sample_{tile_idx}.npy", img_tile)
-            np.save(masks_dir / f"real_sample_{tile_idx}.npy", mask_tile)
-            tile_idx += 1
+            water_ratio = mask_tile.mean()
 
-    print(f"wygenerowano {tile_idx} zdjec w {processed_dir}")
+            if 0.10 <= water_ratio <= 0.90:
+                out_img = images_dir / f"water_tile_{saved_count}.npy"
+                out_mask = masks_dir / f"water_tile_{saved_count}.npy"
+
+                np.save(out_img, img_tile)
+                np.save(out_mask, mask_tile)
+                saved_count += 1
+
+    print(f"wygenerowano {saved_count} zdjec w {processed_dir}")
 
 
 if __name__ == "__main__":

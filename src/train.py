@@ -48,7 +48,7 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-4)
 
-    epochs = 3
+    epochs = 20
     for epoch in range(1, epochs + 1):
         loss = train_epoch(model, train_loader, compound_loss, optimizer, device)
         print(f"Epoka {epoch}/{epochs} | Loss: {loss:.4f}")

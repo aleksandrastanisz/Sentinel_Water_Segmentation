@@ -8,7 +8,7 @@ import rasterio
 import torch
 from torch.utils.data import Dataset
 
-from src.indices import stack_multispectral_tensor
+from indices import stack_multispectral_tensor
 
 
 class SentinelWaterDataset(Dataset):

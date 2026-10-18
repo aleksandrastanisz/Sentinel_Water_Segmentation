@@ -14,7 +14,7 @@ Broad-band optical and near-infrared reflectance over inland and coastal waters 
 
 ## Dataset & Features
 
-Sentinel-2 L2A scene `S2B\_MSIL2A\_20230610T101609\_R065\_T33UVV` (Szczecin Lagoon, cloud cover < 5%) queried via Planetary Computer STAC API. A 2239 x 1994 px spatial crop was tiled into non-overlapping 256 x 256 px patches filtered for water presence ($0.02 \\le \\text{water\\\_ratio} \\le 0.98$) and partitioned into 15 training and 4 validation tiles. Ground truth labels were derived from the Sen2Cor Scene Classification Layer (SCL class 6).
+Sentinel-2 L2A scene `S2B_MSIL2A_20230610T101609_R065_T33UVV` (Szczecin Lagoon, cloud cover < 5%) queried via Planetary Computer STAC API. A 2239 x 1994 px spatial crop was tiled into non-overlapping 256 x 256 px patches filtered for water presence ($0.02 \\le \\text{water\\\_ratio} \\le 0.98$) and partitioned into 15 training and 4 validation tiles. Ground truth labels were derived from the Sen2Cor Scene Classification Layer (SCL class 6).
 
 
 
@@ -43,13 +43,13 @@ Key qualitative findings from validation tiles:
 
 ## Visual Comparison
 
-!\[Validation Results](outputs/figures/evaluation\_results.png)
+!\[Validation Results](outputs/figures/evaluation_results.png)
 
 
 
 ## Full Report
 
-A complete technical report in Polish is available in this repository (`Sentinel-2\_U-Net.docx`).
+A complete technical report in Polish is available in this repository (`Sentinel-2_U-Net.docx`).
 
 
 
@@ -59,7 +59,7 @@ A complete technical report in Polish is available in this repository (`Sentinel
 
 pip install -r requirements.txt
 
-python download\_data.py
+python download_data.py
 
 python train.py
 

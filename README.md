@@ -43,7 +43,7 @@ Key qualitative findings from validation tiles:
 
 ## Visual Comparison
 
-!\[Validation Results](outputs/figures/evaluation_results.png)
+![Validation Results](./outputs/figures/evaluation_results.png)
 
 
 

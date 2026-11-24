@@ -73,11 +73,12 @@ This shows the main weakness of using SCL as ground truth: in difficult conditio
 
 ## Limitations
 
-- **Reference labels:** SCL is a classifier output, not verified ground truth. It is used for both training and evaluation, so the model partly learns to reproduce SCL behaviour, including its errors. An independent reference (e.g. ESA WorldCover or manual annotation) would make the test results more reliable.
+- **Circular reference labels:** SCL is computed by Sen2Cor from the same bands of the same image that the methods use as input. The reference is therefore a function of the input, not an independent measurement, and the high scores (IoU 0.92–0.96) largely measure how well each method reproduces Sen2Cor's rules rather than how well it detects water. U-Net learns to emulate SCL, including its errors, and an NDWI threshold agrees with it partly by construction. An independent reference (manual annotation, or a map from a different sensor such as the Landsat-based JRC Global Surface Water) would be needed to measure actual accuracy.
+- **Repeated use of the test set:** three model versions were evaluated on the test set while bugs in the pipeline were being fixed. Hyperparameters were not tuned on it, but the test set is no longer fully untouched.
+- **Label-based tile selection:** the 2–98% water filter uses SCL masks, also on test tiles. It affects all methods equally but removes the hardest cases from evaluation.
 - **Small test set and single run:** two reservoirs (18 tiles) and one training run, with no estimate of variance across seeds. Differences below about 0.01 IoU should not be treated as meaningful.
 - **Shared acquisition dates:** several areas (including the Jeziorsko test reservoir and three training/validation areas) come from the same Sentinel-2 overpass on 15 August 2023, so they share atmospheric and illumination conditions.
 - **Single season:** all scenes are from summer 2023 with almost no clouds. Winter, ice, turbid water and cloudy conditions are not covered.
-- **Tile filter:** tiles with less than 2% or more than 98% water are excluded, which removes both the hardest and the most trivial cases.
 - **Invalid pixels:** tiles may contain up to 5% pixels flagged by SCL as clouds, cloud shadows or no data. They are treated as non-water in training and evaluation. With 0–0.1% scene cloud cover the effect is negligible, but they are not masked out.
 - **Checkpoint selection:** the best model is chosen by IoU on a single validation lake (12 tiles), which is a noisy criterion.
 

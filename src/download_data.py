@@ -8,7 +8,7 @@ import rasterio
 from pystac_client import Client
 from rasterio.enums import Resampling
 from rasterio.warp import transform_bounds
-from rasterio.windows import from_bounds
+from rasterio.windows import Window, from_bounds
 
 
 @dataclass
@@ -62,19 +62,38 @@ def get_offset(item):
     return offset
 
 
+def aligned_window(proj_bounds, src):
+    # Po wyrownaniu okno musi wypadac dokladnie na granicach pikseli kazdej siatki
+    win = from_bounds(*proj_bounds, transform=src.transform)
+    for v in (win.col_off, win.row_off, win.width, win.height):
+        if abs(v - round(v)) > 1e-6:
+            raise ValueError(f"Okno nie jest wyrownane do siatki pikseli: {win}")
+    return win.round_lengths().round_offsets()
+
+
 def read_bands(item, bbox):
     with rasterio.open(item.assets["B02"].href) as ref_src:
         proj_bounds = transform_bounds("EPSG:4326", ref_src.crs, *bbox)
         ref_win = from_bounds(*proj_bounds, transform=ref_src.transform)
         ref_win = ref_win.round_lengths().round_offsets()
-        target_h, target_w = int(ref_win.height), int(ref_win.width)
+
+        # Wyrownanie do siatki 20 m: parzyste przesuniecie i rozmiar w pikselach 10 m.
+        # Dzieki temu pasma 10 m, 20 m (B11) i SCL obejmuja dokladnie ten sam obszar.
+        target_w = int(ref_win.width) // 2 * 2
+        target_h = int(ref_win.height) // 2 * 2
+        ref_win = Window(
+            int(ref_win.col_off) // 2 * 2,
+            int(ref_win.row_off) // 2 * 2,
+            target_w,
+            target_h,
+        )
+        proj_bounds = ref_src.window_bounds(ref_win)
 
     offset = get_offset(item)
     bands_data = []
     for key in BAND_KEYS:
         with rasterio.open(item.assets[key].href) as src:
-            band_win = from_bounds(*proj_bounds, transform=src.transform)
-            band_win = band_win.round_lengths().round_offsets()
+            band_win = aligned_window(proj_bounds, src)
             resamp = Resampling.bilinear if key == "B11" else Resampling.nearest
 
             raw = src.read(
@@ -89,8 +108,7 @@ def read_bands(item, bbox):
             bands_data.append(np.clip(raw / 10000.0, 0.0, 1.0))
 
     with rasterio.open(item.assets["SCL"].href) as scl_src:
-        scl_win = from_bounds(*proj_bounds, transform=scl_src.transform)
-        scl_win = scl_win.round_lengths().round_offsets()
+        scl_win = aligned_window(proj_bounds, scl_src)
         scl = scl_src.read(
             1, window=scl_win, out_shape=(target_h, target_w), resampling=Resampling.nearest
         )

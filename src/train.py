@@ -1,4 +1,7 @@
+import random
 from pathlib import Path
+
+import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -6,6 +9,13 @@ import segmentation_models_pytorch as smp
 
 from dataset import SentinelWaterDataset
 from model import get_unet_model
+
+
+def set_seed(seed: int = 42) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def train_epoch(model, loader, criterion, optimizer, device):
@@ -56,7 +66,8 @@ def validate_epoch(model, loader, criterion, device, eps=1e-7):
     return avg_loss, global_iou
 
 
-def main():
+def main(seed: int = 42):
+    set_seed(seed)
     project_root = Path(__file__).resolve().parent.parent
     processed_dir = project_root / "data" / "processed"
     checkpoints_dir = project_root / "outputs" / "checkpoints"
@@ -68,7 +79,12 @@ def main():
     train_dataset = SentinelWaterDataset(root_dir=str(processed_dir / "train"))
     val_dataset = SentinelWaterDataset(root_dir=str(processed_dir / "val"))
 
-    train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=4,
+        shuffle=True,
+        generator=torch.Generator().manual_seed(seed),
+    )
     val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
 
     model = get_unet_model(in_channels=7, num_classes=1).to(device)

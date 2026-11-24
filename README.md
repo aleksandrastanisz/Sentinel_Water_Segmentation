@@ -60,14 +60,17 @@ Full per-area metrics: [`outputs/tables/metrics_test.csv`](./outputs/tables/metr
 
 **Lowland reservoir (Jeziorsko):** both methods perform almost identically. On a clear summer scene with an open water surface, a simple NDWI threshold is already a strong baseline.
 
-**Mountain reservoir (Solina):** the SCL reference misses large parts of the reservoir. Water in the shaded valley is clearly visible in the RGB image, but SCL marks only fragments of it as water. Both methods segment the full water surface correctly, so their lower precision here mostly reflects errors in the reference, not in the predictions. U-Net scores higher mainly because it produces fewer small false-positive patches on land than Otsu.
+**Mountain reservoir (Solina):** in a narrow, shaded arm of the reservoir the SCL reference marks only fragments of the water surface (about 5% of the tile), while the RGB image, the Otsu mask and the U-Net prediction all show a continuous water body (about 14% of the tile). On the remaining Solina tiles the disagreement is much smaller: a 2–5% band of pixels, mostly along the shoreline, with positive MNDWI values that SCL does not label as water. Part of the lower precision in Solina therefore comes from the reference, not from the predictions.
 
-This shows the main weakness of using SCL as ground truth: in difficult conditions (terrain shadows) the metrics measure agreement with Sen2Cor rather than correctness.
+U-Net agrees more closely with SCL here than Otsu does. Without an independent reference it is not possible to tell whether this means better segmentation or that the model has learned to reproduce SCL's behaviour.
+
+This shows the main weakness of using SCL as ground truth: in difficult conditions (terrain shadows, shorelines) the metrics partly measure agreement with Sen2Cor rather than correctness.
 
 ## Limitations
 
 - **Reference labels:** SCL is a classifier output, not verified ground truth. It is used for both training and evaluation, so the model partly learns to reproduce SCL behaviour, including its errors. An independent reference (e.g. ESA WorldCover or manual annotation) would make the test results more reliable.
 - **Small test set:** two reservoirs (18 tiles). Results show a trend, not a general performance estimate.
+- **Shared acquisition dates:** several areas (including the Jeziorsko test reservoir and three training/validation areas) come from the same Sentinel-2 overpass on 15 August 2023, so they share atmospheric and illumination conditions.
 - **Single season:** all scenes are from summer 2023 with almost no clouds. Winter, ice, turbid water and cloudy conditions are not covered.
 - **Tile filter:** tiles with less than 2% or more than 98% water are excluded, which removes both the hardest and the most trivial cases.
 - **Checkpoint selection:** the best model is chosen by IoU on a single validation lake (12 tiles), which is a noisy criterion.

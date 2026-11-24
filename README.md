@@ -1,6 +1,6 @@
 # Sentinel-2 Surface Water Segmentation: U-Net vs Otsu Baselines
 
-Segmentation of surface water in Sentinel-2 Level-2A imagery with a U-Net (ResNet-34 encoder) trained on 7 input channels, benchmarked against classical Otsu thresholds on NDWI and MNDWI. The model is evaluated on water bodies it never saw during training, including a mountain reservoir where the reference labels themselves turn out to be unreliable.
+Segmentation of surface water in Sentinel-2 Level-2A imagery with a U-Net (ResNet-34 encoder) trained on 7 input channels, benchmarked against classical Otsu thresholds on NDWI and MNDWI. The model is evaluated on water bodies it never saw during training, including a mountain reservoir where the reference labels miss part of the water surface.
 
 ## Data
 
@@ -61,11 +61,11 @@ Full per-area metrics: [`outputs/tables/metrics_test.csv`](./outputs/tables/metr
 
 ## Discussion
 
-**U-Net vs index thresholds:** U-Net has the highest overall IoU, but the margin over the stronger baseline (Otsu on MNDWI) is small: 0.926 vs 0.920. On clear summer imagery, a simple, unsupervised threshold on a water index gets very close to a trained deep learning model and is worth checking first.
+**U-Net vs index thresholds:** U-Net has the highest overall IoU, but the margin over the stronger baseline (Otsu on MNDWI) is only 0.006 (0.926 vs 0.920), which is below what this test set can reliably resolve. On clear summer imagery, a simple, unsupervised threshold on a water index gets very close to a trained deep learning model and is worth checking first.
 
 **Lowland reservoir (Jeziorsko):** Otsu on NDWI matches the reference best. U-Net and Otsu on MNDWI produce smoother shorelines and miss some small shoreline details present in SCL. SCL itself relies largely on spectral thresholds, so an NDWI threshold may agree with it partly by construction.
 
-**Mountain reservoir (Solina):** in a narrow, shaded arm of the reservoir the SCL reference marks only fragments of the water surface (about 5% of the tile), while the RGB image and all three methods show a continuous water body (about 14% of the tile). On the remaining Solina tiles the disagreement is much smaller: a 2–5% band of pixels, mostly along the shoreline, with positive MNDWI values that SCL does not label as water. Part of the lower precision in Solina therefore comes from the reference, not from the predictions.
+**Mountain reservoir (Solina):** in a narrow, shaded arm of the reservoir the SCL reference marks only fragments of the water surface (about 5% of the tile), while the RGB image and all three methods show a continuous water body (about 14% of the tile). On the remaining Solina tiles the disagreement is much smaller: a 2–5% band of pixels, mostly along the shoreline, with on average positive MNDWI values, which SCL does not label as water. Part of the lower precision in Solina therefore comes from the reference, not from the predictions.
 
 U-Net agrees most closely with SCL in Solina. Without an independent reference it is not possible to tell whether this means better segmentation or that the model has learned to reproduce SCL's behaviour.
 

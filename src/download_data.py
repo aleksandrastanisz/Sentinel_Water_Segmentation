@@ -43,6 +43,15 @@ def fetch_and_tile_sentinel():
     item = items[0]
     print(f"Pobieranie dla sceny: {item.id}")
 
+    # Od Processing Baseline 04.00 (styczen 2022) wartosci L2A maja przesuniecie +1000
+    baseline = item.properties.get("s2:processing_baseline")
+    if baseline is not None:
+        offset = -1000.0 if float(baseline) >= 4.0 else 0.0
+        print(f"Processing baseline: {baseline}, offset: {offset:.0f}")
+    else:
+        offset = None
+        print("Brak informacji o processing baseline - offset wykrywany heurystycznie")
+
     ref_href = item.assets["B02"].href
     with rasterio.open(ref_href) as ref_src:
         proj_bounds = transform_bounds("EPSG:4326", ref_src.crs, *bbox)
@@ -71,7 +80,9 @@ def fetch_and_tile_sentinel():
                 resampling=resamp
             ).astype(np.float32)
 
-            if np.percentile(raw[raw > 0], 1) > 800:
+            if offset is not None:
+                raw = raw + offset
+            elif np.percentile(raw[raw > 0], 1) > 800:
                 raw = raw - 1000.0
 
             data = np.clip(raw / 10000.0, 0.0, 1.0)

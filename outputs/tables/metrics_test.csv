@@ -1,7 +1,10 @@
 Region,Method,IoU,Dice,Precision,Recall
-jeziorsko_reservoir,Otsu (NDWI),0.9505,0.9746,0.9600,0.9897
-jeziorsko_reservoir,U-Net,0.9487,0.9737,0.9544,0.9937
+jeziorsko_reservoir,Otsu (NDWI),0.9562,0.9776,0.9621,0.9936
+jeziorsko_reservoir,Otsu (MNDWI),0.9434,0.9709,0.9468,0.9963
+jeziorsko_reservoir,U-Net,0.9439,0.9711,0.9462,0.9974
 solina_reservoir,Otsu (NDWI),0.8326,0.9086,0.8326,1.0000
-solina_reservoir,U-Net,0.8855,0.9393,0.8944,0.9888
-ALL,Otsu (NDWI),0.9092,0.9525,0.9151,0.9930
-ALL,U-Net,0.9277,0.9625,0.9346,0.9922
+solina_reservoir,Otsu (MNDWI),0.8729,0.9321,0.8759,0.9961
+solina_reservoir,U-Net,0.8908,0.9422,0.9013,0.9871
+ALL,Otsu (NDWI),0.9128,0.9544,0.9165,0.9956
+ALL,Otsu (MNDWI),0.9198,0.9582,0.9230,0.9962
+ALL,U-Net,0.9264,0.9618,0.9315,0.9941

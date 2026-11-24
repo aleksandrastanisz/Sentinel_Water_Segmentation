@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from dataset import SentinelWaterDataset
 from model import get_unet_model
 
-METHODS = ["Otsu (NDWI)", "U-Net"]
+METHODS = ["Otsu (NDWI)", "Otsu (MNDWI)", "U-Net"]
 
 
 def region_from_path(path: str) -> str:
@@ -19,11 +19,11 @@ def region_from_path(path: str) -> str:
     return Path(path).stem.rsplit("_", 2)[0]
 
 
-def otsu_on_ndwi(ndwi: np.ndarray) -> np.ndarray:
+def otsu_mask(index: np.ndarray) -> np.ndarray:
     try:
-        return ndwi > threshold_otsu(ndwi)
+        return index > threshold_otsu(index)
     except ValueError:  # staly obraz, brak progu
-        return np.zeros_like(ndwi, dtype=bool)
+        return np.zeros_like(index, dtype=bool)
 
 
 def compute_metrics(c: dict, eps: float = 1e-7) -> dict:
@@ -67,7 +67,8 @@ def evaluate_and_plot(split: str = "test"):
             logits = model(images.to(device))
             preds = {
                 "U-Net": torch.sigmoid(logits).squeeze().cpu().numpy() > 0.5,
-                "Otsu (NDWI)": otsu_on_ndwi(images[0, 5].numpy()),
+                "Otsu (NDWI)": otsu_mask(images[0, 5].numpy()),  # kanal 5 = NDWI
+                "Otsu (MNDWI)": otsu_mask(images[0, 6].numpy()),  # kanal 6 = MNDWI
             }
 
             for method, pred in preds.items():
@@ -81,18 +82,18 @@ def evaluate_and_plot(split: str = "test"):
                 rgb = images[0, [2, 1, 0]].permute(1, 2, 0).numpy()
                 p98 = np.percentile(rgb, 98)
                 rgb = np.clip(rgb / (p98 if p98 > 0 else 1.0), 0, 1)
-                examples[region] = (rgb, preds["Otsu (NDWI)"], preds["U-Net"], target)
+                examples[region] = (rgb, preds["Otsu (NDWI)"], preds["Otsu (MNDWI)"], preds["U-Net"], target)
 
     # Tabela wynikow: osobno kazdy obszar + wszystkie razem
     regions = sorted(r for r in counts if r != "ALL") + ["ALL"]
     rows = []
     print(f"Zbior: {split}, liczba kafelkow: {len(dataset)}")
-    print(f"{'Obszar':<22}{'Metoda':<14}{'IoU':>8}{'Dice':>8}{'Prec':>8}{'Recall':>8}")
+    print(f"{'Obszar':<22}{'Metoda':<15}{'IoU':>8}{'Dice':>8}{'Prec':>8}{'Recall':>8}")
     for region in regions:
         for method in METHODS:
             m = compute_metrics(counts[region][method])
             rows.append({"Region": region, "Method": method, **{k: f"{v:.4f}" for k, v in m.items()}})
-            print(f"{region:<22}{method:<14}{m['IoU']:>8.4f}{m['Dice']:>8.4f}"
+            print(f"{region:<22}{method:<15}{m['IoU']:>8.4f}{m['Dice']:>8.4f}"
                   f"{m['Precision']:>8.4f}{m['Recall']:>8.4f}")
 
     csv_path = tables_dir / f"metrics_{split}.csv"
@@ -103,8 +104,8 @@ def evaluate_and_plot(split: str = "test"):
     print(f"Zapisano tabele: {csv_path}")
 
     # Wykres: jeden wiersz na obszar
-    titles = ["RGB", "Otsu (NDWI)", "U-Net (7 channels)", "Reference (SCL)"]
-    fig, axes = plt.subplots(len(examples), 4, figsize=(16, 4 * len(examples)), squeeze=False)
+    titles = ["RGB", "Otsu (NDWI)", "Otsu (MNDWI)", "U-Net (7 channels)", "Reference (SCL)"]
+    fig, axes = plt.subplots(len(examples), 5, figsize=(20, 4 * len(examples)), squeeze=False)
     for row, (region, images_row) in enumerate(sorted(examples.items())):
         for col, img in enumerate(images_row):
             ax = axes[row, col]

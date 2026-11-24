@@ -1,4 +1,7 @@
+import csv
+from collections import defaultdict
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -8,13 +11,39 @@ from torch.utils.data import DataLoader
 from dataset import SentinelWaterDataset
 from model import get_unet_model
 
+METHODS = ["Otsu (NDWI)", "U-Net"]
 
-def evaluate_and_plot(eps: float = 1e-7):
+
+def region_from_path(path: str) -> str:
+    # "solina_reservoir_00256_00512.npy" -> "solina_reservoir"
+    return Path(path).stem.rsplit("_", 2)[0]
+
+
+def otsu_on_ndwi(ndwi: np.ndarray) -> np.ndarray:
+    try:
+        return ndwi > threshold_otsu(ndwi)
+    except ValueError:  # staly obraz, brak progu
+        return np.zeros_like(ndwi, dtype=bool)
+
+
+def compute_metrics(c: dict, eps: float = 1e-7) -> dict:
+    tp, fp, fn = c["tp"], c["fp"], c["fn"]
+    return {
+        "IoU": (tp + eps) / (tp + fp + fn + eps),
+        "Dice": (2 * tp + eps) / (2 * tp + fp + fn + eps),
+        "Precision": (tp + eps) / (tp + fp + eps),
+        "Recall": (tp + eps) / (tp + fn + eps),
+    }
+
+
+def evaluate_and_plot(split: str = "test"):
     project_root = Path(__file__).resolve().parent.parent
-    val_dir = project_root / "data" / "processed" / "val"
+    data_dir = project_root / "data" / "processed" / split
     checkpoint_path = project_root / "outputs" / "checkpoints" / "unet_sentinel_water.pth"
     figures_dir = project_root / "outputs" / "figures"
+    tables_dir = project_root / "outputs" / "tables"
     figures_dir.mkdir(parents=True, exist_ok=True)
+    tables_dir.mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -23,87 +52,78 @@ def evaluate_and_plot(eps: float = 1e-7):
     model.to(device)
     model.eval()
 
-    val_dataset = SentinelWaterDataset(root_dir=str(val_dir))
-    loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
+    dataset = SentinelWaterDataset(root_dir=str(data_dir))
+    loader = DataLoader(dataset, batch_size=1, shuffle=False)
 
-    unet_inter, unet_union, unet_sum = 0, 0, 0
-    otsu_inter, otsu_union, otsu_sum = 0, 0, 0
-
-    vis_data = None
+    # counts[region][method] = {"tp", "fp", "fn"}; region "ALL" = wszystkie kafelki
+    counts = defaultdict(lambda: {m: {"tp": 0, "fp": 0, "fn": 0} for m in METHODS})
+    examples = {}  # pierwszy kafelek z kazdego obszaru do wykresu
 
     with torch.no_grad():
         for i, (images, masks) in enumerate(loader):
-            images = images.to(device)
-            target_bool = masks.squeeze().numpy().astype(bool)
+            region = region_from_path(dataset.image_paths[i])
+            target = masks.squeeze().numpy().astype(bool)
 
-            outputs = model(images)
-            preds_prob = torch.sigmoid(outputs).squeeze().cpu().numpy()
-            unet_bool = preds_prob > 0.5
+            logits = model(images.to(device))
+            preds = {
+                "U-Net": torch.sigmoid(logits).squeeze().cpu().numpy() > 0.5,
+                "Otsu (NDWI)": otsu_on_ndwi(images[0, 5].numpy()),
+            }
 
-            ndwi_channel = images[0, 5].cpu().numpy()
-            try:
-                otsu_thresh = threshold_otsu(ndwi_channel)
-                otsu_bool = ndwi_channel > otsu_thresh
-            except ValueError:
-                otsu_bool = np.zeros_like(ndwi_channel, dtype=bool)
+            for method, pred in preds.items():
+                for key in (region, "ALL"):
+                    c = counts[key][method]
+                    c["tp"] += int(np.logical_and(pred, target).sum())
+                    c["fp"] += int(np.logical_and(pred, ~target).sum())
+                    c["fn"] += int(np.logical_and(~pred, target).sum())
 
-            # Akumulacja globalna dla U-Net
-            unet_inter += np.logical_and(unet_bool, target_bool).sum()
-            unet_union += np.logical_or(unet_bool, target_bool).sum()
-            unet_sum += unet_bool.sum() + target_bool.sum()
-
-            # Akumulacja globalna dla Otsu
-            otsu_inter += np.logical_and(otsu_bool, target_bool).sum()
-            otsu_union += np.logical_or(otsu_bool, target_bool).sum()
-            otsu_sum += otsu_bool.sum() + target_bool.sum()
-
-            if i == 0:
-                rgb = images[0, [2, 1, 0]].cpu().permute(1, 2, 0).numpy()
+            if region not in examples:
+                rgb = images[0, [2, 1, 0]].permute(1, 2, 0).numpy()
                 p98 = np.percentile(rgb, 98)
                 rgb = np.clip(rgb / (p98 if p98 > 0 else 1.0), 0, 1)
-                vis_data = (
-                    rgb,
-                    otsu_bool.astype(np.uint8),
-                    unet_bool.astype(np.uint8),
-                    target_bool.astype(np.uint8)
-                )
+                examples[region] = (rgb, preds["Otsu (NDWI)"], preds["U-Net"], target)
 
-    unet_iou = (unet_inter + eps) / (unet_union + eps)
-    unet_dice = (2.0 * unet_inter + eps) / (unet_sum + eps)
+    # Tabela wynikow: osobno kazdy obszar + wszystkie razem
+    regions = sorted(r for r in counts if r != "ALL") + ["ALL"]
+    rows = []
+    print(f"Zbior: {split}, liczba kafelkow: {len(dataset)}")
+    print(f"{'Obszar':<22}{'Metoda':<14}{'IoU':>8}{'Dice':>8}{'Prec':>8}{'Recall':>8}")
+    for region in regions:
+        for method in METHODS:
+            m = compute_metrics(counts[region][method])
+            rows.append({"Region": region, "Method": method, **{k: f"{v:.4f}" for k, v in m.items()}})
+            print(f"{region:<22}{method:<14}{m['IoU']:>8.4f}{m['Dice']:>8.4f}"
+                  f"{m['Precision']:>8.4f}{m['Recall']:>8.4f}")
 
-    otsu_iou = (otsu_inter + eps) / (otsu_union + eps)
-    otsu_dice = (2.0 * otsu_inter + eps) / (otsu_sum + eps)
+    csv_path = tables_dir / f"metrics_{split}.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"Zapisano tabele: {csv_path}")
 
-    print(f"Liczba próbek walidacyjnych: {len(loader)}")
-    print(f"Baseline Otsu | Global IoU: {otsu_iou:.4f} | Global Dice: {otsu_dice:.4f}")
-    print(f"Model U-Net   | Global IoU: {unet_iou:.4f} | Global Dice: {unet_dice:.4f}")
+    # Wykres: jeden wiersz na obszar
+    titles = ["RGB", "Otsu (NDWI)", "U-Net (7 channels)", "Reference (SCL)"]
+    fig, axes = plt.subplots(len(examples), 4, figsize=(16, 4 * len(examples)), squeeze=False)
+    for row, (region, images_row) in enumerate(sorted(examples.items())):
+        for col, img in enumerate(images_row):
+            ax = axes[row, col]
+            if col == 0:
+                ax.imshow(img)
+                ax.set_ylabel(region)
+            else:
+                ax.imshow(img.astype(np.uint8), cmap="Blues", vmin=0, vmax=1)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if row == 0:
+                ax.set_title(titles[col])
 
-    if vis_data is not None:
-        rgb, otsu_bin, unet_bin, gt = vis_data
-        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-
-        axes[0].imshow(rgb)
-        axes[0].set_title("Kompozycja RGB")
-        axes[0].axis("off")
-
-        axes[1].imshow(otsu_bin, cmap="Blues", vmin=0, vmax=1)
-        axes[1].set_title("Baseline: Otsu (NDWI)")
-        axes[1].axis("off")
-
-        axes[2].imshow(unet_bin, cmap="Blues", vmin=0, vmax=1)
-        axes[2].set_title("Predykcja: U-Net (7-ch)")
-        axes[2].axis("off")
-
-        axes[3].imshow(gt, cmap="Blues", vmin=0, vmax=1)
-        axes[3].set_title("Maska referencyjna (SCL)")
-        axes[3].axis("off")
-
-        plt.tight_layout()
-        save_plot_path = figures_dir / "evaluation_results.png"
-        plt.savefig(save_plot_path, dpi=200)
-        plt.close()
-        print(f"Zapisano wykres: {save_plot_path}")
+    plt.tight_layout()
+    fig_path = figures_dir / f"evaluation_{split}.png"
+    plt.savefig(fig_path, dpi=150)
+    plt.close(fig)
+    print(f"Zapisano wykres: {fig_path}")
 
 
 if __name__ == "__main__":
-    evaluate_and_plot()
+    evaluate_and_plot(split="test")

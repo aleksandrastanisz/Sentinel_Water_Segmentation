@@ -1,1 +1,11 @@
+# IDE
 .idea/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Dane i wagi modelu (duze pliki, generowane skryptami)
+data/
+outputs/checkpoints/

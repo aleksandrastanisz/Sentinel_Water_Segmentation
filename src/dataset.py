@@ -52,8 +52,8 @@ class SentinelWaterDataset(Dataset):
 
         if self.transform is not None:
             augmented = self.transform(image=features, mask=mask)
-            features = augmented["image"]
-            mask = augmented["mask"]
+            features = np.ascontiguousarray(augmented["image"])
+            mask = np.ascontiguousarray(augmented["mask"])
 
         features_tensor = torch.from_numpy(features).permute(2, 0, 1).float()
         mask_tensor = torch.from_numpy(mask).long().unsqueeze(0)

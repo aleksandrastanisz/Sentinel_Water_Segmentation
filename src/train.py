@@ -1,6 +1,7 @@
 import random
 from pathlib import Path
 
+import albumentations as A
 import numpy as np
 import torch
 from torch import nn
@@ -16,6 +17,18 @@ def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def get_train_transform(seed: int = 42) -> A.Compose:
+    # Tylko transformacje geometryczne: nie zmieniaja wartosci spektralnych ani indeksow
+    return A.Compose(
+        [
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomRotate90(p=0.5),
+        ],
+        seed=seed,
+    )
 
 
 def train_epoch(model, loader, criterion, optimizer, device):
@@ -76,7 +89,10 @@ def main(seed: int = 42):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Trening na: {device}")
 
-    train_dataset = SentinelWaterDataset(root_dir=str(processed_dir / "train"))
+    train_dataset = SentinelWaterDataset(
+        root_dir=str(processed_dir / "train"),
+        transform=get_train_transform(seed),
+    )
     val_dataset = SentinelWaterDataset(root_dir=str(processed_dir / "val"))
 
     train_loader = DataLoader(

@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional, Callable, Tuple
 
 import numpy as np
-import rasterio
 import torch
 from torch.utils.data import Dataset
 
@@ -16,16 +15,12 @@ class SentinelWaterDataset(Dataset):
         self,
         root_dir: str = "data/processed",
         transform: Optional[Callable] = None,
-        scale_factor: float = 10000.0
     ):
         self.images_dir = os.path.join(root_dir, "images")
         self.masks_dir = os.path.join(root_dir, "masks")
         self.transform = transform
-        self.scale_factor = scale_factor
-        self.image_paths = sorted(glob.glob(os.path.join(self.images_dir, "*.tif")))
-
-        if len(self.image_paths) == 0:
-            self.image_paths = sorted(glob.glob(os.path.join(self.images_dir, "*.npy")))
+        # Kafelki zapisane przez download_data.py: pasma juz przeskalowane do 0-1
+        self.image_paths = sorted(glob.glob(os.path.join(self.images_dir, "*.npy")))
 
     def __len__(self) -> int:
         return len(self.image_paths)
@@ -35,18 +30,9 @@ class SentinelWaterDataset(Dataset):
         filename = os.path.basename(img_path)
         mask_path = os.path.join(self.masks_dir, filename)
 
-        if img_path.endswith(".npy"): # tensor num
-            raw_bands = np.load(img_path).astype(np.float32)
-            mask = np.load(mask_path).astype(np.uint8)
-            b02, b03, b04, b08, b11 = [raw_bands[..., i] for i in range(5)]
-        else: # geo tiff
-            with rasterio.open(img_path) as src:
-                bands = src.read().astype(np.float32) / self.scale_factor
-                b02, b03, b04, b08, b11 = bands[0], bands[1], bands[2], bands[3], bands[4]
-
-            with rasterio.open(mask_path) as src:
-                mask = src.read(1)
-                mask = (mask > 0).astype(np.uint8)
+        raw_bands = np.load(img_path).astype(np.float32)
+        mask = np.load(mask_path).astype(np.uint8)
+        b02, b03, b04, b08, b11 = [raw_bands[..., i] for i in range(5)]
 
         features = stack_multispectral_tensor(b02, b03, b04, b08, b11)
 
